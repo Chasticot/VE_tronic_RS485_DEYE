@@ -1,0 +1,20 @@
+# Identifiants personnels
+**/secrets.h
+.env
+.env.*
+
+# Compilations, caches et documents de travail locaux
+/tmp/
+**/build*/
+*.bin
+*.elf
+*.map
+*.o
+*.a
+*.d
+.DS_Store
+Thumbs.db
+
+# Outils locaux
+.codex/
+.agents/
