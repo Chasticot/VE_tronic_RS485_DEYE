@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <HardwareSerial.h>
+#include <math.h>
 #include "config.h"
 #include "deye_modbus.h"
 
@@ -21,9 +22,10 @@ struct DeyeReader {
   uint32_t baud=9600, lastRxAt=0;
   uint8_t slave=1;
   String parity="8N1", error="Pas encore interrogé";
+  DeyeModbus::RegisterMap registers;
   String host;
   uint32_t serial = 0, started = 0, lastPoll = 0;
-  float loadScale = 10, gridScale = 10;
+  float pv1Scale=1, pv2Scale=1, pv3Scale=1, loadScale=10, gridScale=10, batteryScale=1, socScale=1;
   bool thirdMppt = true, waiting = false;
   uint8_t seq = 0, expectedSeq = 0, frame[256];
   size_t used = 0, wanted = 11;
@@ -35,10 +37,19 @@ struct DeyeReader {
     uint8_t sum=0; for(size_t i=1;i<n;i++) sum+=p[i]; return sum;
   }
   void cancel() { socket.stop(); waiting=false; sample.valid=false; }
+  bool validScale(float value) const { return isfinite(value) && value>=0.001f && value<=100.0f; }
   bool configured() const {
     return useRS485 ? slave>=1 && slave<=247 && DeyeModbus::validBaud(baud) &&
                      (parity=="8N1" || parity=="8E1" || parity=="8O1" || parity=="8N2")
                    : !host.isEmpty() && serial!=0;
+  }
+  bool validMeasurements() const {
+    return DeyeModbus::validMap(registers,thirdMppt) && validScale(pv1Scale) &&
+           validScale(pv2Scale) && validScale(pv3Scale) && validScale(loadScale) &&
+           validScale(gridScale) && validScale(batteryScale) && validScale(socScale);
+  }
+  bool fullyConfigured() const {
+    return configured() && validMeasurements();
   }
   void configure() {
     cancel(); receiver.reset(); used=0; wanted=11;
@@ -49,7 +60,7 @@ struct DeyeReader {
     digitalWrite(DEYE_RS485_CALLBACK,HIGH);
     digitalWrite(DEYE_RS485_ENABLE,useRS485?HIGH:LOW);
     digitalWrite(DEYE_RS485_POWER,useRS485?HIGH:LOW);
-    if(useRS485 && configured()) {
+    if(useRS485 && fullyConfigured()) {
       uint32_t format=parity=="8E1"?SERIAL_8E1:parity=="8O1"?SERIAL_8O1:parity=="8N2"?SERIAL_8N2:SERIAL_8N1;
       rs485.setRxBufferSize(512);
       rs485.begin(baud,format,DEYE_RS485_RX,DEYE_RS485_TX);
@@ -59,15 +70,19 @@ struct DeyeReader {
     error="En attente de mesures";
   }
   bool acceptRTU(const uint8_t *r,size_t n,uint8_t address) {
-    DeyeModbus::Values v;
-    if(!DeyeModbus::decode(r,n,address,thirdMppt,int(loadScale),int(gridScale),v)) return false;
+    DeyeModbus::RawValues raw;
+    if(!DeyeModbus::decode(r,n,address,registers,thirdMppt,raw)) return false;
     DeyeSample next;
-    next.pv=v.pv; next.load=v.load; next.grid=v.grid;
-    next.battery=v.battery; next.soc=v.soc;
+    next.pv=lroundf(float(raw.pv1)*pv1Scale)+lroundf(float(raw.pv2)*pv2Scale)+
+            (thirdMppt?lroundf(float(raw.pv3)*pv3Scale):0);
+    next.load=lroundf(float(raw.load)*loadScale); next.grid=lroundf(float(raw.grid)*gridScale);
+    next.battery=lroundf(float(raw.battery)*batteryScale); next.soc=lroundf(float(raw.soc)*socScale);
+    if(next.pv<0 || next.pv>60000 || next.load<0 || next.load>60000 ||
+       next.battery<-60000 || next.battery>60000 || next.soc<0 || next.soc>100) return false;
     next.valid=true; next.at=millis(); sample=next; error=""; return true;
   }
   void tickRS485() {
-    if(!rs485Started || !configured()) { cancel(); error="Configuration RS485 invalide"; return; }
+    if(!rs485Started || !fullyConfigured()) { cancel(); error="Configuration RS485 ou registres invalides"; return; }
     uint32_t now=millis();
     if(waiting && now-started>=1800) {
       cancel(); receiver.reset(); error="Délai RS485 dépassé (câblage, adresse, vitesse, parité ou CRC)";
@@ -76,7 +91,7 @@ struct DeyeReader {
     for(size_t budget=0;budget<256 && rs485.available();budget++) {
       uint8_t b=rs485.read(); lastRxAt=millis();
       if(!waiting) continue; // Écarter les réponses tardives, jamais les réutiliser.
-      auto result=receiver.feed(b,slave);
+      auto result=receiver.feed(b,slave,DeyeModbus::dataBytes(registers,thirdMppt));
       if(result==DeyeModbus::Receiver::Exception) {
         error="Exception Modbus "+String(receiver.bytes[2]);
         cancel(); receiver.reset();
@@ -91,7 +106,7 @@ struct DeyeReader {
     uint32_t quietMs=(38500U+baud-1)/baud+1;
     if(waiting || now-lastPoll<2500 || millis()-lastRxAt<quietMs || rs485.available()) return;
     lastPoll=now;
-    uint8_t req[8]; DeyeModbus::request(slave,req);
+    uint8_t req[8]; DeyeModbus::request(slave,registers,thirdMppt,req);
     receiver.reset();
     if(rs485.write(req,sizeof(req))!=sizeof(req)) {
       cancel(); error="Échec émission RS485"; return;
@@ -105,14 +120,14 @@ struct DeyeReader {
        frame[5]!=expectedSeq || frame[11]!=2) return false;
     for(int i=0;i<4;i++) if(frame[7+i] != uint8_t(serial>>(8*i))) return false;
     // Response payload: 14-byte V5 prefix, then RTU. Some loggers add zero padding.
-    const size_t offset=25, len=DeyeModbus::responseSize;
+    const size_t offset=25, len=DeyeModbus::frameSize(registers,thirdMppt);
     if(offset+len>n-2) return false;
     return acceptRTU(frame+offset,len,1);
   }
   void tick() {
     if(useRS485) { tickRS485(); return; }
     uint32_t now=millis();
-    if(WiFi.status()!=WL_CONNECTED || !configured()) { cancel(); error="Wi-Fi ou configuration LSW indisponible"; return; }
+    if(WiFi.status()!=WL_CONNECTED || !fullyConfigured()) { cancel(); error="Wi-Fi, configuration LSW ou registres indisponibles"; return; }
     if(waiting) {
       while(socket.available() && used<wanted) {
         frame[used++]=socket.read();
@@ -137,7 +152,7 @@ struct DeyeReader {
     expectedSeq=seq++; req[5]=expectedSeq;
     for(int i=0;i<4;i++) req[7+i]=uint8_t(serial>>(8*i));
     req[11]=2;
-    uint8_t rtu[8]; DeyeModbus::request(1,rtu);
+    uint8_t rtu[8]; DeyeModbus::request(1,registers,thirdMppt,rtu);
     memcpy(req+26,rtu,8); req[34]=checksum(req,34); req[35]=0x15;
     if(socket.write(req,sizeof(req))!=sizeof(req)) { cancel(); return; }
     used=0; wanted=11; started=millis(); waiting=true;

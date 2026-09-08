@@ -4,6 +4,12 @@ const vm = require('vm');
 const assert = require('assert/strict');
 const source = fs.readFileSync(require('path').join(__dirname, '../VETRONIC_ESP32_OTA/pilotage_page.h'), 'utf8');
 const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+assert(source.includes('name="socGuard"'));
+assert(source.includes('name="socStop"'));
+assert(source.includes('name="socResume"'));
+assert(source.includes('id="ledSettings"'));
+assert(script.includes("api('/api/led',data)"));
+assert(script.includes("['settings','ledSettings']"));
 async function exercise(editing,transport='wifi') {
   const ids = new Map();
   const node = () => ({textContent:'', hidden:false, append(){}, replaceChildren(){}, setAttribute(){}, elements:{namedItem(){return null;}}});

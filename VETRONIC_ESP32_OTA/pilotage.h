@@ -2,6 +2,7 @@
 #include <ArduinoJson.h>
 #include <base64.h>
 #include "solar_logic.h"
+#include "battery_soc_guard.h"
 #include "deye_solarman.h"
 #include "lilygo_led.h"
 #include "pilotage_page.h"
@@ -10,9 +11,12 @@
 DeyeReader deye;
 SolarLogic solar;
 DeyeLossTimeout deyeLoss;
+BatterySocGuard batterySocGuard;
 String controlMode="legacy", controlMessage="Pilotage historique", csrfToken;
 int limitA=32, targetA=-1, nativeLimitA=6;
 bool loadIncludesEV=true, meterConfirmed=false;
+bool batterySocEnabled=false;
+int batterySocStop=30, batterySocResume=35;
 uint32_t lastControl=0, wbSampleAt=0;
 bool wbSampleValid=false;
 String wbReadError="Borne pas encore interrogée", lastCurrentReply, lastStateReply, lastValuesReply;
@@ -27,6 +31,9 @@ bool firmwareUploadAllowed=false, firmwareUploadSuccess=false;
 String firmwareUploadError;
 uint32_t lilygoLedStartedAt=0;
 LilygoLedState lilygoLedLastState=LILYGO_LED_FAULT;
+bool lilygoLedEnabled=true, lilygoLedFaultBlink=false, lilygoLedFaultVisible=true;
+uint32_t lilygoLedLastBlinkAt=0, lilygoLedLastColor=0xffffffff;
+uint32_t lilygoLedColors[4]={0x000030,0x003000,0x280030,0x380000};
 
 struct WBParameter { String name,value,unit,minimum,maximum,description; };
 WBParameter wbParameters[64];
@@ -42,6 +49,27 @@ bool integerValue(const String &s, long &v) {
   if(s.isEmpty() || s.length()>11) return false;
   char *end; v=strtol(s.c_str(),&end,10); return *end==0;
 }
+bool registerValue(const String &s,uint16_t &v) {
+  if(s.isEmpty() || s.length()>5) return false;
+  for(size_t i=0;i<s.length();i++) if(!isdigit((unsigned char)s[i])) return false;
+  unsigned long value=strtoul(s.c_str(),nullptr,10);
+  if(value>UINT16_MAX) return false;
+  v=uint16_t(value); return true;
+}
+bool scaleValue(const String &s,float &v) {
+  if(s.isEmpty() || s.length()>12) return false;
+  char *end; float value=strtof(s.c_str(),&end);
+  if(*end || !isfinite(value) || value<0.001f || value>100.0f) return false;
+  v=value; return true;
+}
+bool colorValue(const String &s,uint32_t &v) {
+  if(s.length()!=7 || s[0]!='#') return false;
+  for(size_t i=1;i<7;i++) if(!isxdigit((unsigned char)s[i])) return false;
+  v=strtoul(s.substring(1).c_str(),nullptr,16); return true;
+}
+String colorText(uint32_t color) {
+  char text[8]; snprintf(text,sizeof(text),"#%06lx",static_cast<unsigned long>(color&0xffffff)); return String(text);
+}
 bool safeValue(const String &s) {
   if(s.isEmpty() || s.length()>32) return false;
   for(size_t i=0;i<s.length();i++) if(!isdigit((unsigned char)s[i]) && s[i]!='-' && s[i]!='.' && s[i]!=':') return false;
@@ -52,29 +80,33 @@ int wifiSignalPercent(int rssi) {
   if(rssi>=-50) return 100;
   return (rssi+100)*2;
 }
-void lilygoLedWrite(LilygoLedState state) {
-  // Intensité volontairement modérée pour une LED visible sans éblouir.
-  uint8_t red=0,green=0,blue=0;
-  switch(state) {
-    case LILYGO_LED_STARTUP:  blue=48; break;             // Bleu : démarrage / attente
-    case LILYGO_LED_READY:    green=48; break;            // Vert : Deye + WB-01 joignables
-    case LILYGO_LED_CHARGING: red=40; blue=48; break;     // Violet : véhicule en charge
-    case LILYGO_LED_FAULT:    red=56; break;              // Rouge : défaut de communication
-  }
-  neopixelWrite(LILYGO_LED_PIN,red,green,blue);
+const char *lilygoLedName(LilygoLedState state) {
+  return state==LILYGO_LED_STARTUP?"bleu · démarrage / attente":
+         state==LILYGO_LED_READY?"vert · communications prêtes":
+         state==LILYGO_LED_CHARGING?"violet · véhicule en charge":"rouge · défaut de communication";
+}
+void lilygoLedWrite(uint32_t color) {
+  neopixelWrite(LILYGO_LED_PIN,uint8_t(color>>16),uint8_t(color>>8),uint8_t(color));
 }
 void lilygoLedBegin() {
   lilygoLedStartedAt=millis();
   lilygoLedLastState=LILYGO_LED_STARTUP;
-  lilygoLedWrite(lilygoLedLastState);
+  lilygoLedLastColor=0xffffffff;
+  lilygoLedWrite(lilygoLedColors[LILYGO_LED_STARTUP]);
 }
 void lilygoLedTick() {
-  LilygoLedState next=lilygoLedSelect(millis(),lilygoLedStartedAt,
-      deye.configured(),deye.sample.valid,deye.sample.at,
+  uint32_t now=millis();
+  LilygoLedState next=lilygoLedSelect(now,lilygoLedStartedAt,
+      deye.fullyConfigured(),deye.sample.valid,deye.sample.at,
       wbSampleValid,wbSampleAt,evse_state.code_status==2);
-  if(next!=lilygoLedLastState) {
-    lilygoLedLastState=next;
-    lilygoLedWrite(next);
+  if(next!=LILYGO_LED_FAULT || !lilygoLedFaultBlink) lilygoLedFaultVisible=true;
+  else if(uint32_t(now-lilygoLedLastBlinkAt)>=500U) {
+    lilygoLedLastBlinkAt=now; lilygoLedFaultVisible=!lilygoLedFaultVisible;
+  }
+  uint32_t color=lilygoLedEnabled && lilygoLedFaultVisible?lilygoLedColors[next]:0;
+  if(next!=lilygoLedLastState || color!=lilygoLedLastColor) {
+    lilygoLedLastState=next; lilygoLedLastColor=color;
+    lilygoLedWrite(color);
   }
 }
 bool validWifiSsid(const String &ssid) {
@@ -258,8 +290,25 @@ void saveControlConfig() {
   p.putString("host",deye.host); p.putUInt("serial",deye.serial); p.putInt("limit",limitA);
   p.putBool("rs485",deye.useRS485); p.putUInt("baud",deye.baud);
   p.putUChar("slave",deye.slave); p.putString("parity",deye.parity);
+  p.putUShort("regGrid",deye.registers.grid); p.putUShort("regLoad",deye.registers.load);
+  p.putUShort("regSoc",deye.registers.soc); p.putUShort("regPv1",deye.registers.pv1);
+  p.putUShort("regPv2",deye.registers.pv2); p.putUShort("regPv3",deye.registers.pv3);
+  p.putUShort("regBat",deye.registers.battery);
+  p.putFloat("pv1Scale",deye.pv1Scale); p.putFloat("pv2Scale",deye.pv2Scale); p.putFloat("pv3Scale",deye.pv3Scale);
+  p.putFloat("loadScale",deye.loadScale); p.putFloat("gridScale",deye.gridScale);
+  p.putFloat("batScale",deye.batteryScale); p.putFloat("socScale",deye.socScale);
+  p.putBool("socGuard",batterySocEnabled); p.putInt("socStop",batterySocStop); p.putInt("socResume",batterySocResume);
   p.putBool("includes",loadIncludesEV); p.putBool("meter",meterConfirmed);
-  p.putBool("pv3",deye.thirdMppt); p.putFloat("loadScale",deye.loadScale); p.putFloat("gridScale",deye.gridScale);
+  p.putBool("pv3",deye.thirdMppt);
+  p.end();
+}
+void saveLedConfig() {
+  Preferences p; p.begin("solar-web",false);
+  p.putBool("ledOn",lilygoLedEnabled); p.putBool("ledBlink",lilygoLedFaultBlink);
+  p.putUInt("ledStart",lilygoLedColors[LILYGO_LED_STARTUP]);
+  p.putUInt("ledReady",lilygoLedColors[LILYGO_LED_READY]);
+  p.putUInt("ledCharge",lilygoLedColors[LILYGO_LED_CHARGING]);
+  p.putUInt("ledFault",lilygoLedColors[LILYGO_LED_FAULT]);
   p.end();
 }
 void rememberMode() {
@@ -273,10 +322,10 @@ String applyControlMode(String mode) {
   mode.trim();
   mode.toLowerCase();
   if(mode!="stop" && mode!="manual" && mode!="solar" && mode!="legacy") return "Mode invalide";
-  if(mode=="solar" && (!meterConfirmed || !deye.configured()))
+  if(mode=="solar" && (!meterConfirmed || !deye.fullyConfigured()))
     return "Configurer Deye et confirmer les mesures avant activation";
 
-  controlMode="stop"; solar.reset(); deyeLoss.reset(); rememberMode();
+  controlMode="stop"; solar.reset(); deyeLoss.reset(); batterySocGuard.reset(); rememberMode();
   if(!setCurrent(0)) return controlMessage;
   if(mode=="manual" || mode=="solar") {
     String e=prepareWB("");
@@ -308,7 +357,7 @@ void controlTick() {
   bool deyeFresh = deye.sample.valid && (millis() - deye.sample.at <= 15000); // 15s au lieu de 7.5s
 
   if(controlMode=="solar") deyeLoss.update(millis(),deyeFresh);
-  else deyeLoss.reset();
+  else { deyeLoss.reset(); batterySocGuard.reset(); }
 
   if((uint32_t)(millis()-lastControl)<5000 || step_tcp!=ATTENTE_REQUETE) return;
   lastControl=millis();
@@ -328,6 +377,9 @@ void controlTick() {
   }
   if(controlMode=="manual") return;
 
+  bool batteryBlocked=batterySocGuard.update(batterySocEnabled,deyeFresh,deye.sample.soc,
+                                             batterySocStop,batterySocResume);
+
   // No vehicle power is drawn with a de-energized outlet. The 230 V reference
   // is only for calculating a start command, never presented as a measurement.
   int evW = wbFresh && evse_state.code_status==2 ? int(evse_state.courant)*calculationVolts/1000 : 0;
@@ -336,7 +388,10 @@ void controlTick() {
   int surplus = deye.sample.pv - house;
   int amps;
 
-  if(!deyeFresh) {
+  if(batteryBlocked) {
+    solar.reset();
+    amps=0;
+  } else if(!deyeFresh) {
     amps = deyeLoss.current(millis(), wbFresh && meterConfirmed,
                             solar.running, targetA,
                             solar.bridging, solar.deficitSince);
@@ -352,6 +407,8 @@ void controlTick() {
     solar.reset();
     setCurrent(0);
     controlMessage="Défaut liaison borne : arrêt demandé";
+  } else if(batteryBlocked) {
+    controlMessage="Charge solaire bloquée : batterie Deye à "+String(deye.sample.soc)+" % ; reprise à "+String(batterySocResume)+" %";
   } else if(!deyeFresh) {
     controlMessage = amps>0 ? "Connexion Deye perdue : dernière consigne maintenue, arrêt dans "+String((deyeLoss.remaining(millis())+999)/1000)+" s"
                             : "Deye indisponible : charge arrêtée, attente du retour des mesures";
@@ -372,9 +429,23 @@ void beginControl() {
   // Anciennes configurations : Wi-Fi conservé si la nouvelle clé est absente.
   deye.useRS485=p.getBool("rs485",false); deye.baud=p.getUInt("baud",9600);
   deye.slave=p.getUChar("slave",1); deye.parity=p.getString("parity","8N1");
+  deye.registers.grid=p.getUShort("regGrid",169); deye.registers.load=p.getUShort("regLoad",178);
+  deye.registers.soc=p.getUShort("regSoc",184); deye.registers.pv1=p.getUShort("regPv1",186);
+  deye.registers.pv2=p.getUShort("regPv2",187); deye.registers.pv3=p.getUShort("regPv3",188);
+  deye.registers.battery=p.getUShort("regBat",190);
   limitA=constrain(p.getInt("limit",32),6,63);
   loadIncludesEV=p.getBool("includes",true); meterConfirmed=p.getBool("meter",false);
   deye.thirdMppt=p.getBool("pv3",true); deye.loadScale=p.getFloat("loadScale",10); deye.gridScale=p.getFloat("gridScale",10);
+  deye.pv1Scale=p.getFloat("pv1Scale",1); deye.pv2Scale=p.getFloat("pv2Scale",1); deye.pv3Scale=p.getFloat("pv3Scale",1);
+  deye.batteryScale=p.getFloat("batScale",1); deye.socScale=p.getFloat("socScale",1);
+  batterySocEnabled=p.getBool("socGuard",false); batterySocStop=constrain(p.getInt("socStop",30),0,95);
+  batterySocResume=constrain(p.getInt("socResume",35),5,100);
+  if(batterySocResume<batterySocStop+5) batterySocResume=min(100,batterySocStop+5);
+  lilygoLedEnabled=p.getBool("ledOn",true); lilygoLedFaultBlink=p.getBool("ledBlink",false);
+  lilygoLedColors[LILYGO_LED_STARTUP]=p.getUInt("ledStart",0x000030);
+  lilygoLedColors[LILYGO_LED_READY]=p.getUInt("ledReady",0x003000);
+  lilygoLedColors[LILYGO_LED_CHARGING]=p.getUInt("ledCharge",0x280030);
+  lilygoLedColors[LILYGO_LED_FAULT]=p.getUInt("ledFault",0x380000);
   if(p.getBool("managed",false)) controlMode="stop";
   p.end();
   lilygoLedStartedAt=millis();
@@ -524,7 +595,14 @@ void beginControl() {
     d["baud"]=deye.baud; d["slave"]=deye.slave; d["parity"]=deye.parity;
     d["deyeError"]=deye.error;
     d["includes"]=loadIncludesEV; d["meter"]=meterConfirmed; d["pv3"]=deye.thirdMppt;
-    d["loadScale"]=deye.loadScale; d["gridScale"]=deye.gridScale;
+    d["regGrid"]=deye.registers.grid; d["regLoad"]=deye.registers.load; d["regSoc"]=deye.registers.soc;
+    d["regPv1"]=deye.registers.pv1; d["regPv2"]=deye.registers.pv2; d["regPv3"]=deye.registers.pv3; d["regBat"]=deye.registers.battery;
+    d["pv1Scale"]=deye.pv1Scale; d["pv2Scale"]=deye.pv2Scale; d["pv3Scale"]=deye.pv3Scale;
+    d["loadScale"]=deye.loadScale; d["gridScale"]=deye.gridScale; d["batScale"]=deye.batteryScale; d["socScale"]=deye.socScale;
+    d["socGuard"]=batterySocEnabled; d["socStop"]=batterySocStop; d["socResume"]=batterySocResume; d["socBlocked"]=batterySocGuard.blocked;
+    d["ledOn"]=lilygoLedEnabled; d["ledBlink"]=lilygoLedFaultBlink; d["ledState"]=lilygoLedName(lilygoLedLastState);
+    d["ledStart"]=colorText(lilygoLedColors[LILYGO_LED_STARTUP]); d["ledReady"]=colorText(lilygoLedColors[LILYGO_LED_READY]);
+    d["ledCharge"]=colorText(lilygoLedColors[LILYGO_LED_CHARGING]); d["ledFault"]=colorText(lilygoLedColors[LILYGO_LED_FAULT]);
     d["tcpPort"]=SERIAL2_TCP_PORT; d["lastCommand"]=str_mem_commande; jsonSend(d);
   });
   server.on("/api/mode",HTTP_POST,[](){
@@ -561,14 +639,53 @@ void beginControl() {
       }
       serial=uint32_t(value);
     }
-    String ls=server.arg("loadScale"),gs=server.arg("gridScale");
-    if((ls!="1" && ls!="10") || (gs!="1" && gs!="10")) { server.send(400,"text/plain","Facteur invalide"); return; }
+    DeyeModbus::RegisterMap map;
+    if(!registerValue(server.arg("regGrid"),map.grid) || !registerValue(server.arg("regLoad"),map.load) ||
+       !registerValue(server.arg("regSoc"),map.soc) || !registerValue(server.arg("regPv1"),map.pv1) ||
+       !registerValue(server.arg("regPv2"),map.pv2) || !registerValue(server.arg("regPv3"),map.pv3) ||
+       !registerValue(server.arg("regBat"),map.battery)) {
+      server.send(400,"text/plain","Adresse de registre invalide (0 à 65535)"); return;
+    }
+    bool third=server.arg("pv3")=="1";
+    if(!DeyeModbus::validMap(map,third)) {
+      server.send(400,"text/plain","Les registres actifs doivent tenir dans un bloc Modbus de 125 registres maximum"); return;
+    }
+    float pv1Scale,pv2Scale,pv3Scale,loadScale,gridScale,batteryScale,socScale;
+    if(!scaleValue(server.arg("pv1Scale"),pv1Scale) || !scaleValue(server.arg("pv2Scale"),pv2Scale) ||
+       !scaleValue(server.arg("pv3Scale"),pv3Scale) || !scaleValue(server.arg("loadScale"),loadScale) ||
+       !scaleValue(server.arg("gridScale"),gridScale) || !scaleValue(server.arg("batScale"),batteryScale) ||
+       !scaleValue(server.arg("socScale"),socScale)) {
+      server.send(400,"text/plain","Coefficient invalide (0,001 à 100)"); return;
+    }
+    long socStop,socResume;
+    if(!integerValue(server.arg("socStop"),socStop) || !integerValue(server.arg("socResume"),socResume) ||
+       socStop<0 || socStop>95 || socResume<5 || socResume>100 || socResume<socStop+5) {
+      server.send(400,"text/plain","Seuils SOC invalides : reprise au moins 5 % au-dessus de l'arrêt"); return;
+    }
     deye.cancel(); deye.host=host; deye.serial=serial; limitA=limit;
     deye.useRS485=rs; deye.baud=baud; deye.slave=slave; deye.parity=parity;
     loadIncludesEV=server.arg("includes")=="1"; meterConfirmed=server.arg("meter")=="1";
-    deye.thirdMppt=server.arg("pv3")=="1"; deye.loadScale=ls.toInt(); deye.gridScale=gs.toInt();
-    deye.configure(); solar.reset(); deyeLoss.reset();
+    deye.thirdMppt=third; deye.registers=map;
+    deye.pv1Scale=pv1Scale; deye.pv2Scale=pv2Scale; deye.pv3Scale=pv3Scale;
+    deye.loadScale=loadScale; deye.gridScale=gridScale; deye.batteryScale=batteryScale; deye.socScale=socScale;
+    batterySocEnabled=server.arg("socGuard")=="1"; batterySocStop=socStop; batterySocResume=socResume;
+    deye.configure(); solar.reset(); deyeLoss.reset(); batterySocGuard.reset();
     saveControlConfig(); server.send(200,"text/plain; charset=utf-8","Configuration enregistrée · liaison Deye "+String(rs?"RS485":"Wi-Fi")+" active");
+  });
+  server.on("/api/led",HTTP_POST,[](){
+    if(!webAuth(true)) return;
+    uint32_t colors[4];
+    if(!colorValue(server.arg("ledStart"),colors[LILYGO_LED_STARTUP]) ||
+       !colorValue(server.arg("ledReady"),colors[LILYGO_LED_READY]) ||
+       !colorValue(server.arg("ledCharge"),colors[LILYGO_LED_CHARGING]) ||
+       !colorValue(server.arg("ledFault"),colors[LILYGO_LED_FAULT])) {
+      server.send(400,"text/plain; charset=utf-8","Couleur invalide : format #RRGGBB attendu."); return;
+    }
+    for(uint8_t i=0;i<4;i++) lilygoLedColors[i]=colors[i];
+    lilygoLedEnabled=server.arg("ledOn")=="1"; lilygoLedFaultBlink=server.arg("ledBlink")=="1";
+    lilygoLedLastColor=0xffffffff; lilygoLedFaultVisible=true; lilygoLedLastBlinkAt=millis();
+    saveLedConfig(); lilygoLedTick();
+    server.send(200,"text/plain; charset=utf-8",lilygoLedEnabled?"Configuration LED enregistrée.":"LED désactivée.");
   });
   server.on("/api/prepare",HTTP_POST,[](){
     if(!webAuth(true)) return;

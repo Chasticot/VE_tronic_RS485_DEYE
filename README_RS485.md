@@ -1,6 +1,6 @@
 # WB-01 + Deye 12K-SG02LP1-EU sur LILYGO T-CAN485
 
-Cette version `v3.1-rs485-lilygo` ajoute dans **Paramètres → Onduleur Deye → Liaison avec le Deye** le choix entre **Wi-Fi / logger Solarman LSW** et **RS485 / câble direct**. La sélection s'applique dès l'enregistrement et reste mémorisée après redémarrage. Les anciennes configurations restent en Wi-Fi. Les coordonnées LSW sont conservées lors d'un passage en RS485.
+Cette version `v3.2-configurable-deye` ajoute dans **Paramètres → Onduleur Deye → Liaison avec le Deye** le choix entre **Wi-Fi / logger Solarman LSW** et **RS485 / câble direct**. La sélection s'applique dès l'enregistrement et reste mémorisée après redémarrage. Les anciennes configurations restent en Wi-Fi. Les coordonnées LSW sont conservées lors d'un passage en RS485.
 
 Le Wi-Fi de l'ESP32 sert toujours à la page web, à Jeedom et aux mises à jour. La lecture Deye par RS485 ne dépend ni du réseau ni du logger. Sans Wi-Fi au démarrage, après les délais de connexion et de portail, le programme poursuit son fonctionnement avec le point d'accès AutoConnect `VETRONIC_ESP32_OTA`, adresse `172.0.0.1`. Comme dans le projet fourni, un redémarrage après pilotage géré revient en **arrêt**.
 
@@ -39,14 +39,14 @@ Utiliser une paire torsadée et repérer les numéros de contacts du connecteur 
 1. Installer le firmware sur la LILYGO par USB lors de la première utilisation, puis ouvrir `/parametres` (identifiants web définis dans `config.h`).
 2. Choisir **RS485**. Valeurs initiales proposées : **9600 bauds, 8N1, adresse Modbus 1**. Régler l'adresse selon le « Modbus SN » de votre Deye ; vitesse et format doivent correspondre à son interface. L'IP et le numéro LSW ne sont pas demandés dans ce mode.
 3. Enregistrer en mode Arrêt ou Borne/Jeedom. Le changement invalide les anciennes mesures et attend une nouvelle réponse. Aucune bascule automatique vers l'autre liaison n'est effectuée.
-4. Vérifier le diagnostic de `/pilotage` : liaison choisie, paramètres série et erreur éventuelle. Comparer PV, consommation, réseau, batterie et SOC à l'écran Deye avant d'autoriser le solaire. Le bloc **169–195**, le troisième MPPT et les facteurs 1/10 sont repris du projet existant, sans prétendre déduire une nouvelle cartographie du seul nom du modèle.
+4. Vérifier le diagnostic de `/pilotage` : liaison choisie, paramètres série et erreur éventuelle. Comparer PV, consommation, réseau, batterie et SOC à l'écran Deye avant d'autoriser le solaire. Les adresses et coefficients affichés dans **Registres et coefficients Deye avancés** peuvent être modifiés pour votre révision ; le firmware lit toujours un seul bloc FC03 cohérent, limité à 125 registres.
 5. Contrôler la lecture de la WB-01 et les commandes marche/arrêt. Tester ensuite une perte RS485 et le retour des mesures. La temporisation Deye existante de cinq minutes et la priorité de la temporisation batterie sont conservées.
 
 Pour revenir au Wi-Fi, choisir **Wi-Fi · logger Solarman LSW**, vérifier l'IP et le numéro de série du **logger**, puis enregistrer. La connexion utilise TCP 8899 et l'esclave 1, comme auparavant.
 
 ## Vérification logicielle
 
-La LED WS2812B intégrée à la LILYGO (GPIO4) affiche une couleur fixe : **bleu** pendant les 20 premières secondes ou l'attente de configuration Deye, **vert** lorsque les communications Deye et WB-01 sont valides, **violet** quand le véhicule est en charge, et **rouge** si une de ces communications expire après la phase de démarrage. Les délais de validité sont 15 s pour le Deye et 10 s pour la WB-01. La LED utilise le pilote intégré au cœur ESP32 ; aucune bibliothèque supplémentaire n'est requise.
+La LED WS2812B intégrée à la LILYGO (GPIO4) affiche par défaut **bleu** pendant les 20 premières secondes ou l'attente de configuration Deye, **vert** lorsque les communications Deye et WB-01 sont valides, **violet** quand le véhicule est en charge, et **rouge** si une de ces communications expire après la phase de démarrage. Dans **Paramètres → LED RGB intégrée LILYGO**, chaque couleur, l'activation et le clignotement en défaut sont modifiables et mémorisés. Les délais de validité sont 15 s pour le Deye et 10 s pour la WB-01.
 
 Lecture Modbus FC03 uniquement, un bloc toutes les 2,5 s, réception non bloquante, délai de réponse de 1,8 s. Contrôle adresse, fonction, longueur, CRC et cohérence des mesures. Les réponses tardives hors requête sont écartées ; les trames fragmentées, un écho local et les données parasites sont gérés dans un tampon borné. La validité expire également après 15 s sans nouvelle mesure.
 

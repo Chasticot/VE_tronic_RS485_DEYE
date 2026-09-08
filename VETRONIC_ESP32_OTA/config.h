@@ -4,7 +4,7 @@
 #include <String.h>
 
 /*************************  Constante ****************************/
-#define VERSION "v3.1-rs485-lilygo"
+#define VERSION "v3.2-configurable-deye"
 // Identifiants HTTP Basic (fenêtre native du navigateur), à personnaliser.
 #define WEB_USER "admin"
 #define WEB_PASSWORD "vetronic"
