@@ -24,6 +24,7 @@
 #include <ESP32Time.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <esp32-hal-rgb-led.h>
 
 /****************  Active les messages de debug  ******************/
 bool debug = false;
@@ -82,6 +83,7 @@ void setup()
   Serial.begin(115200);
   Serial.setRxBufferSize(BUFFERSIZE);
   delay(500);
+  lilygoLedBegin();
 
   // Port série COM vers la borne
   COM->begin(UART_BAUD2, SERIAL_PARAM2, SERIAL2_RXPIN, SERIAL2_TXPIN);
@@ -198,6 +200,7 @@ void loop()
   portal.handleClient();
   webMaintenanceTick();
   controlTick();
+  lilygoLedTick();
 
   // Mise à jour de l'heure par NTP toutes les heures
   if (previous_hour != rtc.getHour(true))

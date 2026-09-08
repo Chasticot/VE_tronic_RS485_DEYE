@@ -40,6 +40,9 @@
 #define DEYE_RS485_CALLBACK 17
 #define DEYE_RS485_ENABLE 19
 #define DEYE_RS485_POWER 16
+
+// LED RGB WS2812B intégrée à la LILYGO T-CAN485.
+#define LILYGO_LED_PIN 4
 /**********************  Port d'écoute TCP ************************/
 #define SERIAL2_TCP_PORT 9200  // Wifi Port UART2
 

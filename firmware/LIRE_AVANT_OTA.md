@@ -7,9 +7,10 @@ Les fichiers .bin décrits dans cette notice restent locaux et sont exclus de Gi
 Fichier actuel : **`VETRONIC_LILYGO_v3.1-rs485.bin`**.
 
 - Binaire applicatif pour la **LILYGO T-CAN485 / ESP32 classique**, cœur Arduino 2.0.17, profil `esp32:esp32:esp32`, flash 4 Mo, partitions par défaut et PSRAM désactivée.
-- Compilation finale réussie : programme 1 154 573 octets (88 % de la partition) ; variables globales 89 724 octets (27 % de la RAM).
+- Compilation finale réussie : programme 1 163 057 octets (88 % de la partition) ; variables globales 90 204 octets (27 % de la RAM).
 - **Nouveau câblage WB-01 : RX32 / TX33 via MAX3232**, même si le Deye est utilisé en Wi-Fi. L'ancien RX15/TX4 ne convient pas à ce firmware.
 - Dans `/parametres`, sélectionner Wi-Fi / LSW ou RS485. Valeurs RS485 initiales : 9600 bauds, 8N1, esclave 1, à faire correspondre au Deye. Le choix est mémorisé.
+- La LED RGB intégrée indique bleu (démarrage/attente), vert (communications prêtes), violet (véhicule en charge) ou rouge (défaut de communication).
 - Le réseau de démarrage et les identifiants web du projet sont conservés. Identifiants web actuels : `admin` / `vetronic`, personnalisables dans `config.h`.
 - Pour une carte neuve, utiliser l'USB et le sketch avec le profil ci-dessus. Ce fichier applicatif seul n'est pas une image fusionnée à écrire à l'adresse 0. L'OTA est utilisable si un firmware compatible et son partitionnement sont déjà installés sur cette LILYGO.
 - Ne pas utiliser ce binaire sur un ESP32-S3 ou une ancienne carte restée câblée RX15/TX4.

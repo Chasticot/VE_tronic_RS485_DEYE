@@ -3,6 +3,7 @@
 #include <base64.h>
 #include "solar_logic.h"
 #include "deye_solarman.h"
+#include "lilygo_led.h"
 #include "pilotage_page.h"
 #include "wb_protocol.h"
 
@@ -24,6 +25,8 @@ String pendingWifiSsid, pendingWifiPassword;
 uint32_t wifiConnectAt=0, firmwareRestartAt=0;
 bool firmwareUploadAllowed=false, firmwareUploadSuccess=false;
 String firmwareUploadError;
+uint32_t lilygoLedStartedAt=0;
+LilygoLedState lilygoLedLastState=LILYGO_LED_FAULT;
 
 struct WBParameter { String name,value,unit,minimum,maximum,description; };
 WBParameter wbParameters[64];
@@ -48,6 +51,31 @@ int wifiSignalPercent(int rssi) {
   if(rssi<=-100) return 0;
   if(rssi>=-50) return 100;
   return (rssi+100)*2;
+}
+void lilygoLedWrite(LilygoLedState state) {
+  // Intensité volontairement modérée pour une LED visible sans éblouir.
+  uint8_t red=0,green=0,blue=0;
+  switch(state) {
+    case LILYGO_LED_STARTUP:  blue=48; break;             // Bleu : démarrage / attente
+    case LILYGO_LED_READY:    green=48; break;            // Vert : Deye + WB-01 joignables
+    case LILYGO_LED_CHARGING: red=40; blue=48; break;     // Violet : véhicule en charge
+    case LILYGO_LED_FAULT:    red=56; break;              // Rouge : défaut de communication
+  }
+  neopixelWrite(LILYGO_LED_PIN,red,green,blue);
+}
+void lilygoLedBegin() {
+  lilygoLedStartedAt=millis();
+  lilygoLedLastState=LILYGO_LED_STARTUP;
+  lilygoLedWrite(lilygoLedLastState);
+}
+void lilygoLedTick() {
+  LilygoLedState next=lilygoLedSelect(millis(),lilygoLedStartedAt,
+      deye.configured(),deye.sample.valid,deye.sample.at,
+      wbSampleValid,wbSampleAt,evse_state.code_status==2);
+  if(next!=lilygoLedLastState) {
+    lilygoLedLastState=next;
+    lilygoLedWrite(next);
+  }
 }
 bool validWifiSsid(const String &ssid) {
   if(ssid.isEmpty() || ssid.length()>31) return false;
@@ -349,6 +377,7 @@ void beginControl() {
   deye.thirdMppt=p.getBool("pv3",true); deye.loadScale=p.getFloat("loadScale",10); deye.gridScale=p.getFloat("gridScale",10);
   if(p.getBool("managed",false)) controlMode="stop";
   p.end();
+  lilygoLedStartedAt=millis();
   deye.configure();
   if(controlMode=="stop") setCurrent(0);
   csrfToken=String(esp_random(),HEX)+String(esp_random(),HEX);

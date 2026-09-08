@@ -46,6 +46,8 @@ Pour revenir au Wi-Fi, choisir **Wi-Fi · logger Solarman LSW**, vérifier l'IP 
 
 ## Vérification logicielle
 
+La LED WS2812B intégrée à la LILYGO (GPIO4) affiche une couleur fixe : **bleu** pendant les 20 premières secondes ou l'attente de configuration Deye, **vert** lorsque les communications Deye et WB-01 sont valides, **violet** quand le véhicule est en charge, et **rouge** si une de ces communications expire après la phase de démarrage. Les délais de validité sont 15 s pour le Deye et 10 s pour la WB-01. La LED utilise le pilote intégré au cœur ESP32 ; aucune bibliothèque supplémentaire n'est requise.
+
 Lecture Modbus FC03 uniquement, un bloc toutes les 2,5 s, réception non bloquante, délai de réponse de 1,8 s. Contrôle adresse, fonction, longueur, CRC et cohérence des mesures. Les réponses tardives hors requête sont écartées ; les trames fragmentées, un écho local et les données parasites sont gérés dans un tampon borné. La validité expire également après 15 s sans nouvelle mesure.
 
 Exécuter `tests/run.ps1` et `node tests/web_access_test.js`. Les assertions C++14 évaluent les algorithmes de production à la compilation : régulation, protocole WB-01, CRC et décodage Deye, erreurs et reprise après bruit. Le test JavaScript vérifie les pages, les droits d'accès attendus et la restauration/bascule des champs Wi-Fi/RS485. Ces tests et une compilation ne remplacent pas un essai sur le matériel réel.
