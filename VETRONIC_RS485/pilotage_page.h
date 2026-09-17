@@ -30,7 +30,7 @@ const char PILOTAGE_HTML[] PROGMEM = R"HTML(<!doctype html>
 <label>Adresse Modbus du Deye <input name="slave" type="number" min="1" max="247" value="1" required></label>
 <label>Vitesse (bauds) <select name="baud"><option>1200</option><option>2400</option><option>4800</option><option selected>9600</option><option>19200</option><option>38400</option><option>57600</option><option>115200</option></select></label>
 <label>Format série <select name="parity"><option value="8N1">8N1 · sans parité</option><option value="8E1">8E1 · parité paire</option><option value="8O1">8O1 · parité impaire</option><option value="8N2">8N2 · 2 bits de stop</option></select></label>
-<small>LILYGO T-CAN485 : bornier RS485 A/B vers le port RS485 de supervision du Deye. Réglages initiaux : 9600 bauds, 8N1, adresse 1 ; ils doivent correspondre à l'onduleur. La WB-01 reste sur son adaptateur RS232 (RX32 / TX33).</small>
+<small>LILYGO T-CAN485 : sur le Deye SUN-12K-SG02LP1-EU-AM2, bornier RS485 A/B vers le port Meter. Le port BMS/RS485 reste relié aux batteries. Réglages initiaux : 9600 bauds, 8N1, adresse 1 ; ils doivent correspondre à l'onduleur. La WB-01 reste sur son adaptateur RS232 (RX32 / TX33).</small>
 </fieldset>
 <label>Courant maximal autorisé (A) <input name="limit" type="number" min="6" max="63" required></label>
 <details class="expandable"><summary>⚙️ Registres et coefficients Deye avancés <small>Adresses et coefficients de mesure</small></summary><p class="muted">Changer ces valeurs uniquement après vérification avec la documentation ou les trames de votre onduleur. Tous les registres actifs doivent tenir dans un même bloc de 125 registres.</p>

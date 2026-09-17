@@ -25,9 +25,9 @@ La commande du MAX13487 suit l'exemple constructeur LILYGO : GPIO16/17/19 à l'�
 
 ## Câble Deye
 
-Utiliser le **port RJ45 RS485 de supervision** du SUN-12K-SG02LP1-EU. Le port BMS est destiné à la batterie, le port Meter au compteur et les ports Parallel à la mise en parallèle.
+Sur le **SUN-12K-SG02LP1-EU-AM2**, utiliser le **port RJ45 Meter** : il fournit la liaison RS485 de lecture confirmée avec ce firmware. Le port BMS/RS485 reste raccordé aux batteries et les ports Parallel sont destinés à la mise en parallèle. Les affectations de ports variant selon les révisions Deye, vérifier le libellé de votre onduleur avant raccordement.
 
-| Bornier RS485 de la LILYGO | RJ45 du port RS485 Deye |
+| Bornier RS485 de la LILYGO | RJ45 du port Meter Deye |
 | --- | --- |
 | RS_A | Broche 2 : RS485 A |
 | RS_B | Broche 1 : RS485 B |
