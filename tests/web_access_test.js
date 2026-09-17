@@ -12,6 +12,7 @@ assert(source.includes('id="manualAmps" type="number" min="6" max="63"'));
 assert(source.includes('id="deyeState"'));
 assert(script.includes("wifiInit(scan=false)"));
 assert(script.includes("action:'scan'"));
+assert(script.includes("wifiInit(true)"));
 assert(script.includes("api('/api/led',data)"));
 assert(script.includes("['settings','ledSettings']"));
 async function exercise(editing,transport='wifi') {

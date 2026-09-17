@@ -120,7 +120,7 @@ if($('prepare'))$('prepare').onclick=()=>action(async()=>{message(await api('/ap
 if($('commandForm'))$('commandForm').onsubmit=e=>{e.preventDefault();action(async()=>{const commande=e.target.elements.commande.value;const r=await api('/api/command',{commande});$('commandResult').textContent=r;message('Commande envoyée.')})};
 if($('jeedomForm'))$('jeedomForm').onsubmit=e=>{e.preventDefault();action(async()=>{message(await api('/api/jeedom',Object.fromEntries(new FormData(e.target))))})};
 if($('wifiForm'))$('wifiForm').onsubmit=e=>{e.preventDefault();action(async()=>{message(await api('/api/wifi',Object.assign({action:'connect'},Object.fromEntries(new FormData(e.target)))));$('wifiDetail').textContent='Basculement vers le nouveau réseau en cours…'})};
-if($('scanWifi'))$('scanWifi').onclick=()=>action(wifiInit);
+if($('scanWifi'))$('scanWifi').onclick=()=>action(async()=>{const list=$('wifiScan');if(list)list.replaceChildren(Object.assign(document.createElement('small'),{textContent:'Recherche des réseaux en cours…'}));await wifiInit(true)});
 if($('firmwareForm'))$('firmwareForm').onsubmit=e=>{e.preventDefault();action(async()=>{const file=e.target.elements.firmware.files[0];if(!file)throw Error('Sélectionnez un fichier .bin.');message('Envoi de '+file.name+'… ne fermez pas cette page.');const form=new FormData();form.append('firmware',file);const r=await fetch('/api/update',{method:'POST',headers:{'X-CSRF-Token':token},body:form});const text=await r.text();if(!r.ok)throw Error(text);message(text)})};
 async function poll(){if(!busy)await status();setTimeout(poll,5000)}poll();
 </script></html>)HTML";
