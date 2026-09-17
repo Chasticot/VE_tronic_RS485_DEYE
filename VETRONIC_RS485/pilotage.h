@@ -7,12 +7,14 @@
 #include "lilygo_led.h"
 #include "pilotage_page.h"
 #include "wb_protocol.h"
+#include "manual_current_limit.h"
 
 DeyeReader deye;
 SolarLogic solar;
 DeyeLossTimeout deyeLoss;
 BatterySocGuard batterySocGuard;
-String controlMode="legacy", controlMessage="Pilotage historique", csrfToken;
+String controlMode="solar", controlMessage="Initialisation du solaire dynamique", csrfToken;
+bool solarStartupPending=true, wbReconnectPending=false;
 int limitA=32, targetA=-1, nativeLimitA=6;
 bool loadIncludesEV=true, meterConfirmed=false;
 bool batterySocEnabled=false;
@@ -318,20 +320,27 @@ void rememberMode() {
 // Point d'entrée unique pour les boutons web et les commandes Jeedom du port 9200.
 // Garder les vérifications ici évite qu'une commande distante ne contourne les
 // protections appliquées depuis la page Pilotage.
-String applyControlMode(String mode) {
+String applyControlMode(String mode, int manualAmps=0) {
   mode.trim();
   mode.toLowerCase();
   if(mode!="stop" && mode!="manual" && mode!="solar" && mode!="legacy") return "Mode invalide";
   if(mode=="solar" && (!meterConfirmed || !deye.fullyConfigured()))
     return "Configurer Deye et confirmer les mesures avant activation";
 
+  solarStartupPending=false;
   controlMode="stop"; solar.reset(); deyeLoss.reset(); batterySocGuard.reset(); rememberMode();
   if(!setCurrent(0)) return controlMessage;
   if(mode=="manual" || mode=="solar") {
     String e=prepareWB("");
     if(!e.isEmpty()) return e;
   }
-  if(mode=="manual" && !setCurrent(min(limitA,nativeLimitA))) return controlMessage;
+  if(mode=="manual") {
+    const int manualLimit=wb_manual_current_limit(limitA);
+    if(manualAmps==0) manualAmps=manualLimit; // Compatibilité Jeedom historique.
+    if(manualAmps<6 || manualAmps>manualLimit)
+      return "Intensité manuelle invalide (6 à "+String(manualLimit)+" A)";
+    if(!setCurrent(manualAmps)) return controlMessage;
+  }
   if(mode=="legacy" && !setCurrent(-1)) return controlMessage;
   controlMode=mode;
   controlMessage="Mode demandé : "+mode;
@@ -363,7 +372,35 @@ void controlTick() {
   lastControl=millis();
 
   // Lecture de la borne (avec double tentative)
-  refreshWB();
+  bool wbResponding=refreshWB();
+  if(!wbResponding && (!wbSampleValid || uint32_t(millis()-wbSampleAt)>10000U))
+    wbReconnectPending=true;
+  if(wbResponding && wbReconnectPending) {
+    wbReconnectPending=false;
+    solarStartupPending=true;
+    controlMode="solar";
+    solar.reset(); deyeLoss.reset(); batterySocGuard.reset();
+  }
+
+  // Une WB-01 qui redémarre retrouve le solaire sans demander une seconde
+  // action Web. Une sélection explicite de mode annule cette reprise.
+  if(solarStartupPending) {
+    if(!setCurrent(0)) return;
+    if(!meterConfirmed || !deye.fullyConfigured()) {
+      controlMessage="Solaire par défaut : configurer Deye et confirmer les mesures";
+      return;
+    }
+    if(!wbResponding) return;
+    String error=prepareWB("");
+    if(!error.isEmpty()) {
+      controlMessage="Solaire par défaut en attente : "+error;
+      return;
+    }
+    solarStartupPending=false;
+    solar.reset(); deyeLoss.reset(); batterySocGuard.reset();
+    controlMessage="Solaire dynamique prêt : attente de mesures fraîches";
+    return;
+  }
 
   // Fraîcheur de la borne : 10 secondes de validité (au lieu de zéro)
   bool wbFresh = wbSampleValid && (millis() - wbSampleAt <= 10000);
@@ -396,11 +433,11 @@ void controlTick() {
                             solar.running, targetA,
                             solar.bridging, solar.deficitSince);
     if(amps==0) {
-      solar.decide(millis(), false, 0, 0, 0, calculationVolts, min(limitA,nativeLimitA));
+      solar.decide(millis(), false, 0, 0, 0, calculationVolts, wb_solar_current_limit(limitA));
     }
   } else {
     amps = solar.decide(millis(), fresh, surplus, deye.sample.battery,
-                        deye.sample.grid, calculationVolts, min(limitA,nativeLimitA));
+                        deye.sample.grid, calculationVolts, wb_solar_current_limit(limitA));
   }
 
   if(!setCurrent(amps)) {
@@ -446,11 +483,12 @@ void beginControl() {
   lilygoLedColors[LILYGO_LED_READY]=p.getUInt("ledReady",0x003000);
   lilygoLedColors[LILYGO_LED_CHARGING]=p.getUInt("ledCharge",0x280030);
   lilygoLedColors[LILYGO_LED_FAULT]=p.getUInt("ledFault",0x380000);
-  if(p.getBool("managed",false)) controlMode="stop";
+  controlMode="solar";
+  solarStartupPending=true;
   p.end();
   lilygoLedStartedAt=millis();
   deye.configure();
-  if(controlMode=="stop") setCurrent(0);
+  setCurrent(0);
   csrfToken=String(esp_random(),HEX)+String(esp_random(),HEX);
   const char *headers[]={"X-CSRF-Token"}; server.collectHeaders(headers,1);
   server.on("/pilotage",HTTP_GET,[](){ if(webAuth(false,false)) server.send_P(200,"text/html; charset=utf-8",PILOTAGE_HTML); });
@@ -510,22 +548,26 @@ void beginControl() {
       memset(&credential,0,sizeof(credential));
       if(credentials.load(i,&credential)) saved.add((const char*)credential.ssid);
     }
-    JsonArray networks=d.createNestedArray("networks");
-    int found=WiFi.scanNetworks();
-    if(found>0) for(int i=0;i<found && i<12;i++) {
-      String ssid=WiFi.SSID(i);
-      if(ssid.isEmpty()) continue;
-      JsonObject network=networks.createNestedObject();
-      int signal=WiFi.RSSI(i);
-      network["ssid"]=ssid; network["rssi"]=signal; network["percent"]=wifiSignalPercent(signal);
-      network["secured"]=WiFi.encryptionType(i)!=WIFI_AUTH_OPEN;
-    }
-    WiFi.scanDelete();
     jsonSend(d);
   });
   server.on("/api/wifi",HTTP_POST,[](){
     if(!webAuth(true)) return;
     String action=server.arg("action"),ssid=server.arg("ssid");
+    if(action=="scan") {
+      DynamicJsonDocument d(4096);
+      JsonArray networks=d.createNestedArray("networks");
+      int found=WiFi.scanNetworks();
+      if(found>0) for(int i=0;i<found && i<12;i++) {
+        String name=WiFi.SSID(i);
+        if(name.isEmpty()) continue;
+        JsonObject network=networks.createNestedObject();
+        int signal=WiFi.RSSI(i);
+        network["ssid"]=name; network["rssi"]=signal; network["percent"]=wifiSignalPercent(signal);
+        network["secured"]=WiFi.encryptionType(i)!=WIFI_AUTH_OPEN;
+      }
+      WiFi.scanDelete();
+      jsonSend(d); return;
+    }
     if(!validWifiSsid(ssid)) { server.send(400,"text/plain; charset=utf-8","SSID invalide (1 à 31 caractères imprimables)."); return; }
     AutoConnectCredential credentials;
     if(action=="delete") {
@@ -583,9 +625,15 @@ void beginControl() {
     d["stateReply"]=lastStateReply.substring(0,512);
     d["valuesReply"]=lastValuesReply.substring(0,512);
     d["nativeLimitA"]=nativeLimitA;
+    d["manualLimitA"]=wb_manual_current_limit(limitA);
+    d["solarLimitA"]=wb_solar_current_limit(limitA);
     d["surplusW"]=deye.sample.pv-deye.sample.load+(loadIncludesEV?int(evse_state.courant)*calculationVolts/1000:0);
     d["state"]=evse_state.code_status; d["volts"]=evse_state.tension; d["amps"]=evse_state.courant/1000.0;
-    d["deyeValid"]=deye.sample.valid && millis()-deye.sample.at<=15000; // harmonisé avec deyeFresh (controlTick)
+    uint32_t deyeAgeMs=deye.sample.valid ? uint32_t(millis()-deye.sample.at) : 0;
+    bool deyeValid=deye.sample.valid && deyeAgeMs<=15000;
+    d["deyeValid"]=deyeValid;
+    d["deyeAgeSeconds"]=deye.sample.valid ? int((deyeAgeMs+999)/1000) : -1;
+    d["deyeUsingLastGood"]=deyeValid && !deye.error.isEmpty();
     d["deyeTimeoutSeconds"]=deyeLoss.remaining(millis())/1000;
     d["pv"]=deye.sample.pv; d["load"]=deye.sample.load; d["battery"]=deye.sample.battery; d["grid"]=deye.sample.grid; d["soc"]=deye.sample.soc;
     d["bridgeSeconds"]=solar.bridging ? (300000U-min(uint32_t(300000),uint32_t(millis()-solar.deficitSince)))/1000 : 0;
@@ -600,6 +648,7 @@ void beginControl() {
     d["pv1Scale"]=deye.pv1Scale; d["pv2Scale"]=deye.pv2Scale; d["pv3Scale"]=deye.pv3Scale;
     d["loadScale"]=deye.loadScale; d["gridScale"]=deye.gridScale; d["batScale"]=deye.batteryScale; d["socScale"]=deye.socScale;
     d["socGuard"]=batterySocEnabled; d["socStop"]=batterySocStop; d["socResume"]=batterySocResume; d["socBlocked"]=batterySocGuard.blocked;
+    d["socGuardApi"]=true;
     d["ledOn"]=lilygoLedEnabled; d["ledBlink"]=lilygoLedFaultBlink; d["ledState"]=lilygoLedName(lilygoLedLastState);
     d["ledStart"]=colorText(lilygoLedColors[LILYGO_LED_STARTUP]); d["ledReady"]=colorText(lilygoLedColors[LILYGO_LED_READY]);
     d["ledCharge"]=colorText(lilygoLedColors[LILYGO_LED_CHARGING]); d["ledFault"]=colorText(lilygoLedColors[LILYGO_LED_FAULT]);
@@ -608,9 +657,26 @@ void beginControl() {
   server.on("/api/mode",HTTP_POST,[](){
     if(!webAuth(true,false)) return;
     String mode=server.arg("mode");
-    String error=applyControlMode(mode);
+    long amps=0;
+    if(mode=="manual" && (!integerValue(server.arg("amps"),amps) || amps<6 || amps>63)) {
+      server.send(400,"text/plain; charset=utf-8","Intensité manuelle invalide (6 à 63 A)."); return;
+    }
+    String error=applyControlMode(mode,int(amps));
     if(!error.isEmpty()) { server.send(409,"text/plain; charset=utf-8",error); return; }
     server.send(200,"text/plain; charset=utf-8","Mode appliqué. Vérifier l'état réel du véhicule.");
+  });
+  server.on("/api/soc-guard",HTTP_POST,[](){
+    if(!webAuth(true,false)) return;
+    long socStop,socResume;
+    if(!integerValue(server.arg("socStop"),socStop) || !integerValue(server.arg("socResume"),socResume) ||
+       socStop<0 || socStop>95 || socResume<5 || socResume>100 || socResume<socStop+5) {
+      server.send(400,"text/plain; charset=utf-8","Seuils SOC invalides : reprise au moins 5 % au-dessus de l'arrêt"); return;
+    }
+    batterySocEnabled=server.arg("socGuard")=="1";
+    batterySocStop=int(socStop); batterySocResume=int(socResume);
+    batterySocGuard.reset();
+    saveControlConfig();
+    server.send(200,"text/plain; charset=utf-8","Protection SOC enregistrée sans modifier le mode de charge.");
   });
   server.on("/api/config",HTTP_POST,[](){
     if(!webAuth(true)) return;

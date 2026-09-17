@@ -1,8 +1,8 @@
 # WB-01 + Deye 12K-SG02LP1-EU sur LILYGO T-CAN485
 
-Cette version `v3.2-configurable-deye` ajoute dans **Paramètres → Onduleur Deye → Liaison avec le Deye** le choix entre **Wi-Fi / logger Solarman LSW** et **RS485 / câble direct**. La sélection s'applique dès l'enregistrement et reste mémorisée après redémarrage. Les anciennes configurations restent en Wi-Fi. Les coordonnées LSW sont conservées lors d'un passage en RS485.
+Cette version `v3.3-rs485-merged` ajoute dans **Paramètres → Onduleur Deye → Liaison avec le Deye** le choix entre **Wi-Fi / logger Solarman LSW** et **RS485 / câble direct**. La sélection s'applique dès l'enregistrement et reste mémorisée après redémarrage. Les anciennes configurations restent en Wi-Fi. Les coordonnées LSW sont conservées lors d'un passage en RS485.
 
-Le Wi-Fi de l'ESP32 sert toujours à la page web, à Jeedom et aux mises à jour. La lecture Deye par RS485 ne dépend ni du réseau ni du logger. Sans Wi-Fi au démarrage, après les délais de connexion et de portail, le programme poursuit son fonctionnement avec le point d'accès AutoConnect `VETRONIC_ESP32_OTA`, adresse `172.0.0.1`. Comme dans le projet fourni, un redémarrage après pilotage géré revient en **arrêt**.
+Le Wi-Fi de l'ESP32 sert toujours à la page web, à Jeedom et aux mises à jour. La lecture Deye par RS485 ne dépend ni du réseau ni du logger. Sans Wi-Fi au démarrage, après les délais de connexion et de portail, le programme poursuit son fonctionnement avec le point d'accès AutoConnect `VETRONIC_ESP32_OTA`, adresse `172.0.0.1`. Après un redémarrage ou le retour de la WB-01, le firmware sélectionne le solaire dynamique, maintient d'abord 0 A, puis prépare la borne et attend des mesures Deye fraîches avant toute charge.
 
 ## Carte et liaison WB-01
 
@@ -40,7 +40,7 @@ Utiliser une paire torsadée et repérer les numéros de contacts du connecteur 
 2. Choisir **RS485**. Valeurs initiales proposées : **9600 bauds, 8N1, adresse Modbus 1**. Régler l'adresse selon le « Modbus SN » de votre Deye ; vitesse et format doivent correspondre à son interface. L'IP et le numéro LSW ne sont pas demandés dans ce mode.
 3. Enregistrer en mode Arrêt ou Borne/Jeedom. Le changement invalide les anciennes mesures et attend une nouvelle réponse. Aucune bascule automatique vers l'autre liaison n'est effectuée.
 4. Vérifier le diagnostic de `/pilotage` : liaison choisie, paramètres série et erreur éventuelle. Comparer PV, consommation, réseau, batterie et SOC à l'écran Deye avant d'autoriser le solaire. Les adresses et coefficients affichés dans **Registres et coefficients Deye avancés** peuvent être modifiés pour votre révision ; le firmware lit toujours un seul bloc FC03 cohérent, limité à 125 registres.
-5. Contrôler la lecture de la WB-01 et les commandes marche/arrêt. Tester ensuite une perte RS485 et le retour des mesures. La temporisation Deye existante de cinq minutes et la priorité de la temporisation batterie sont conservées.
+5. Contrôler la lecture de la WB-01 et les commandes marche/arrêt. Tester ensuite une perte RS485 et le retour des mesures. Une dernière mesure Deye valide reste utilisable pendant 15 s ; la temporisation Deye de cinq minutes et la priorité de la temporisation batterie sont conservées.
 
 Pour revenir au Wi-Fi, choisir **Wi-Fi · logger Solarman LSW**, vérifier l'IP et le numéro de série du **logger**, puis enregistrer. La connexion utilise TCP 8899 et l'esclave 1, comme auparavant.
 

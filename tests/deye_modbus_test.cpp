@@ -1,4 +1,4 @@
-#include "../VETRONIC_ESP32_OTA/deye_modbus.h"
+#include "../VETRONIC_RS485/deye_modbus.h"
 using namespace DeyeModbus;
 
 constexpr RegisterMap kMap=defaults();

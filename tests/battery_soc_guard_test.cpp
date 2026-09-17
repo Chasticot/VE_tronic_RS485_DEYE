@@ -1,4 +1,4 @@
-#include "../VETRONIC_ESP32_OTA/battery_soc_guard.h"
+#include "../VETRONIC_RS485/battery_soc_guard.h"
 constexpr bool hysteresis() {
   BatterySocGuard guard;
   if(guard.update(false,true,10,30,35)) return false;

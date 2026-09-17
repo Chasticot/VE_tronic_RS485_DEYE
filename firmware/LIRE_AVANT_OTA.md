@@ -2,12 +2,12 @@
 
 Les fichiers .bin décrits dans cette notice restent locaux et sont exclus de Git, car ils peuvent contenir les identifiants Wi-Fi personnels. Pour une nouvelle installation, recompiler le sketch ; le fichier secrets.h facultatif reste lui aussi local. Voir le README principal.
 
-# Firmware LILYGO T-CAN485 : v3.1 RS485
+# Firmware LILYGO T-CAN485 : v3.3 RS485
 
-Fichier actuel : **`VETRONIC_LILYGO_v3.1-rs485.bin`**.
+Fichier actuel : compiler `VETRONIC_RS485/VETRONIC_RS485.ino` pour produire votre propre `.bin`.
 
 - Binaire applicatif pour la **LILYGO T-CAN485 / ESP32 classique**, cœur Arduino 2.0.17, profil `esp32:esp32:esp32`, flash 4 Mo, partitions par défaut et PSRAM désactivée.
-- Compilation finale réussie : programme 1 163 057 octets (88 % de la partition) ; variables globales 90 204 octets (27 % de la RAM).
+- Une compilation complète est à réaliser après chaque modification ; les binaires ne sont pas versionnés car ils peuvent contenir des identifiants Wi-Fi.
 - **Nouveau câblage WB-01 : RX32 / TX33 via MAX3232**, même si le Deye est utilisé en Wi-Fi. L'ancien RX15/TX4 ne convient pas à ce firmware.
 - Dans `/parametres`, sélectionner Wi-Fi / LSW ou RS485. Valeurs RS485 initiales : 9600 bauds, 8N1, esclave 1, à faire correspondre au Deye. Le choix est mémorisé.
 - La LED RGB intégrée indique bleu (démarrage/attente), vert (communications prêtes), violet (véhicule en charge) ou rouge (défaut de communication).

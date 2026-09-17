@@ -1,20 +1,29 @@
-#include "../VETRONIC_ESP32_OTA/solar_logic.h"
+#include "../VETRONIC_RS485/solar_logic.h"
+#include "../VETRONIC_RS485/manual_current_limit.h"
+constexpr bool solarInstallationLimit() {
+  SolarLogic s;
+  return s.decide(0,true,4600,0,0,230,wb_solar_current_limit(32))==19 &&
+    s.decide(5000,true,7560,0,0,230,wb_solar_current_limit(32))==32 &&
+    s.decide(10000,true,12000,0,0,230,wb_solar_current_limit(63))==32 &&
+    s.decide(15000,true,7360,0,0,230,wb_solar_current_limit(16))==16;
+}
+static_assert(solarInstallationLimit(),"Solar exceeds 16A, reaches 32A and respects configured and installation caps");
 // Compile with C++14: these assertions execute the production algorithm at compile time.
 constexpr bool threshold() {
   SolarLogic s;
   return s.decide(0,true,1799,0,0,230,32)==0 &&
-    s.decide(5000,true,1800,0,0,230,32)==7 &&
-    s.decide(10000,true,4600,0,0,230,32)==20 &&
+    s.decide(5000,true,1800,0,0,230,32)==6 &&
+    s.decide(10000,true,4600,0,0,230,32)==19 &&
     s.decide(15000,true,16000,0,0,230,16)==16;
 }
 constexpr bool grace() {
   SolarLogic s;
-  if(s.decide(0,true,2300,0,0,230,32)!=10) return false;
+  if(s.decide(0,true,2300,0,0,230,32)!=9) return false;
   if(s.decide(5000,true,300,1080,0,230,32)!=6) return false;
   if(s.decide(304999,true,300,1080,0,230,32)!=6) return false;
   if(s.decide(305000,true,300,1080,0,230,32)!=0) return false;
   if(s.decide(310000,true,1900,500,0,230,32)!=0) return false;
-  return s.decide(315000,true,2300,0,0,230,32)==10;
+  return s.decide(315000,true,2300,0,0,230,32)==9;
 }
 constexpr bool recovery() {
   SolarLogic s;
@@ -29,7 +38,9 @@ constexpr bool failures() {
   SolarLogic s;
   s.decide(0,true,2300,0,0,230,32);
   if(s.decide(5000,false,2300,0,0,230,32)!=0 || s.running) return false;
-  if(s.decide(10000,true,2300,0,0,0,32)!=0) return false;
+  if(s.decide(10000,true,2300,0,0,0,32)!=9) return false;
+  if(s.decide(11000,true,2300,0,0,120,32)!=9) return false;
+  if(s.decide(12000,true,2300,0,0,280,32)!=9) return false;
   s.decide(15000,true,2300,0,0,230,32);
   return s.decide(20000,true,200,0,1000,230,32)==0;
 }
@@ -44,8 +55,38 @@ constexpr bool wraparound() {
 static_assert(threshold(),"1800W start, current adaptation, current cap");
 static_assert(grace(),"five-minute battery window and restart lockout");
 static_assert(recovery(),"sun recovery resets the grace window");
-static_assert(failures(),"missing telemetry, voltage and grid fallback stop");
+static_assert(failures(),"Missing telemetry and grid fallback stop; voltage alone never stops");
 static_assert(wraparound(),"millis overflow must preserve five-minute window");
+
+constexpr bool lossesDoNotCycle() {
+  SolarLogic s;
+  // 200 W headroom reduces a former 20 A request to 19 A.
+  if(s.decide(0,true,4600,0,0,230,32)!=19) return false;
+  for(uint32_t t=5000;t<=900000;t+=5000) {
+    if(s.decide(t,true,4600,180,0,230,32)!=19 || s.bridging) return false;
+  }
+  // At minimum current the reserve may be partly consumed, without an actual deficit.
+  return s.decide(905000,true,1500,150,0,230,32)==6 && !s.bridging;
+}
+constexpr bool dischargeHysteresis() {
+  SolarLogic s;
+  s.decide(0,true,4600,0,0,230,32);
+  s.decide(5000,true,4600,300,0,230,32);
+  if(s.bridging) return false;
+  s.decide(10000,true,4600,301,0,230,32);
+  if(!s.bridging || s.deficitSince!=10000) return false;
+  s.decide(20000,true,4600,250,0,230,32);
+  if(!s.bridging || s.deficitSince!=10000) return false;
+  s.decide(30000,true,4600,150,0,230,32);
+  if(s.bridging) return false;
+  s.decide(40000,true,4600,400,0,230,32);
+  if(s.decide(339999,true,4600,200,0,230,32)==0) return false;
+  if(s.decide(340000,true,4600,200,0,230,32)!=0) return false;
+  if(s.decide(345000,true,4600,200,0,230,32)!=0) return false;
+  return s.decide(350000,true,4600,150,0,230,32)==19;
+}
+static_assert(lossesDoNotCycle(),"Small conversion losses must not cause repeated five-minute stops");
+static_assert(dischargeHysteresis(),"Significant discharge keeps its deadline until recovery below 150W");
 
 constexpr bool deyeTimeout() {
   DeyeLossTimeout d;

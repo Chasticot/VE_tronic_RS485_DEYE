@@ -36,8 +36,11 @@ SOLAR_CONSTEXPR bool wbParseTelemetry(const char *state, const char *values, WBT
   const char *p=wbFind(state,"EVSE state :");
   if(!p) return false;
   p+=12;
-  return wbUnsigned(p,out.state) && out.state<=2 &&
-         wbParseValues(values,out.milliamps,out.volts,out.limitMilliamps);
+  if(!wbUnsigned(p,out.state) || out.state>2 ||
+     !wbParseValues(values,out.milliamps,out.volts,out.limitMilliamps)) return false;
+  // La protection de tension appartient à la borne ; cette valeur reste une
+  // référence de calcul lorsque la prise est hors tension.
+  return true;
 }
 SOLAR_CONSTEXPR unsigned wbCalculationVolts(const WBTelemetry &value) {
   if(value.volts>=180 && value.volts<=260) return value.volts;

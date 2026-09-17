@@ -7,7 +7,7 @@ La page web permet de choisir la connexion au Deye : **Wi-Fi via un logger Solar
 ## Démarrage
 
 1. Lire la [notice RS485 et câblage LILYGO](README_RS485.md).
-2. Ouvrir `VETRONIC_ESP32_OTA/VETRONIC_ESP32_OTA.ino` dans Arduino IDE.
+2. Ouvrir `VETRONIC_RS485/VETRONIC_RS485.ino` dans Arduino IDE.
 3. Choisir **ESP32 Dev Module**, cœur Espressif **2.0.17**, flash 4 Mo, partitions par défaut, PSRAM désactivée. Installer AutoConnect, PageBuilder, ArduinoJson 6 et ESP32Time.
 4. Facultatif : copier `secrets.example.h` vers `secrets.h` dans le dossier du sketch et renseigner le Wi-Fi. Ce fichier reste local. Sinon utiliser le portail de configuration Wi-Fi de secours.
 5. Personnaliser les identifiants web `WEB_USER` / `WEB_PASSWORD` dans `config.h`, compiler et téléverser par USB sur la carte neuve.
@@ -20,7 +20,7 @@ La page web permet de choisir la connexion au Deye : **Wi-Fi via un logger Solar
 - [Notice LILYGO et RS485](README_RS485.md)
 - [Fonctionnement du pilotage solaire et WB-01](README_SOLAIRE.md)
 - [Instructions firmware et OTA](firmware/LIRE_AVANT_OTA.md)
-- `VETRONIC_ESP32_OTA/` : sketch et interface web
+- `VETRONIC_RS485/` : sketch et interface web
 - `tests/` : tests Modbus, WB-01, régulation et interface web
 
 Les binaires locaux précompilés ne sont pas versionnés : ils peuvent embarquer des identifiants Wi-Fi. Recompiler à partir des sources pour produire son propre firmware. Les fichiers temporaires et caches de compilation sont également exclus.

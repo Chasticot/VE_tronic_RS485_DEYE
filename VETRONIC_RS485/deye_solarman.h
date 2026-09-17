@@ -36,7 +36,13 @@ struct DeyeReader {
   static uint8_t checksum(const uint8_t *p, size_t n) {
     uint8_t sum=0; for(size_t i=1;i<n;i++) sum+=p[i]; return sum;
   }
-  void cancel() { socket.stop(); waiting=false; sample.valid=false; }
+  // Une panne de transport ne doit pas effacer la dernière mesure : le
+  // régulateur peut l'utiliser pendant sa fenêtre de validité de 15 s.
+  // Seul un changement de configuration invalide explicitement la mesure.
+  void cancel(bool invalidateSample=false) {
+    socket.stop(); waiting=false;
+    if(invalidateSample) sample.valid=false;
+  }
   bool validScale(float value) const { return isfinite(value) && value>=0.001f && value<=100.0f; }
   bool configured() const {
     return useRS485 ? slave>=1 && slave<=247 && DeyeModbus::validBaud(baud) &&
@@ -52,7 +58,7 @@ struct DeyeReader {
     return configured() && validMeasurements();
   }
   void configure() {
-    cancel(); receiver.reset(); used=0; wanted=11;
+    cancel(true); receiver.reset(); used=0; wanted=11;
     if(rs485Started) { rs485.end(); rs485Started=false; }
     pinMode(DEYE_RS485_POWER,OUTPUT);
     pinMode(DEYE_RS485_CALLBACK,OUTPUT);
@@ -82,7 +88,7 @@ struct DeyeReader {
     next.valid=true; next.at=millis(); sample=next; error=""; return true;
   }
   void tickRS485() {
-    if(!rs485Started || !fullyConfigured()) { cancel(); error="Configuration RS485 ou registres invalides"; return; }
+    if(!rs485Started || !fullyConfigured()) { cancel(true); error="Configuration RS485 ou registres invalides"; return; }
     uint32_t now=millis();
     if(waiting && now-started>=1800) {
       cancel(); receiver.reset(); error="Délai RS485 dépassé (câblage, adresse, vitesse, parité ou CRC)";
@@ -127,7 +133,8 @@ struct DeyeReader {
   void tick() {
     if(useRS485) { tickRS485(); return; }
     uint32_t now=millis();
-    if(WiFi.status()!=WL_CONNECTED || !fullyConfigured()) { cancel(); error="Wi-Fi, configuration LSW ou registres indisponibles"; return; }
+    if(!fullyConfigured()) { cancel(true); error="Configuration LSW ou registres indisponibles"; return; }
+    if(WiFi.status()!=WL_CONNECTED) { cancel(); error="Wi-Fi indisponible"; return; }
     if(waiting) {
       while(socket.available() && used<wanted) {
         frame[used++]=socket.read();
@@ -147,7 +154,7 @@ struct DeyeReader {
     }
     if(now-lastPoll<2500) return;
     lastPoll=now;
-    if(!socket.connect(host.c_str(),8899,300)) { sample.valid=false; error="Connexion LSW impossible"; return; }
+    if(!socket.connect(host.c_str(),8899,300)) { error="Connexion LSW impossible"; return; }
     uint8_t req[36]={0xa5,23,0,0x10,0x45};
     expectedSeq=seq++; req[5]=expectedSeq;
     for(int i=0;i<4;i++) req[7+i]=uint8_t(serial>>(8*i));
