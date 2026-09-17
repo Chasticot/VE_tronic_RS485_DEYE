@@ -13,6 +13,8 @@ assert(source.includes('id="deyeState"'));
 assert(script.includes("wifiInit(scan=false)"));
 assert(script.includes("action:'scan'"));
 assert(script.includes("wifiInit(true)"));
+assert(script.includes("Array.isArray(d.saved)"));
+assert(script.includes("Array.isArray(d.networks)"));
 assert(script.includes("api('/api/led',data)"));
 assert(script.includes("['settings','ledSettings']"));
 async function exercise(editing,transport='wifi') {
