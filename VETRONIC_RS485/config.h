@@ -19,6 +19,14 @@
 #ifndef DEFAULT_WIFI_PASSWORD
 #define DEFAULT_WIFI_PASSWORD ""
 #endif
+// Point d'accès direct permanent. Ces valeurs peuvent être remplacées dans
+// secrets.h sans publier le mot de passe personnel dans le dépôt.
+#ifndef DIRECT_AP_SSID
+#define DIRECT_AP_SSID "VE-Tronic-Direct"
+#endif
+#ifndef DIRECT_AP_PASSWORD
+#define DIRECT_AP_PASSWORD "vetronic32"
+#endif
 #define ATTENTE_REQUETE 1
 #define READ_EVSE 2
 #define ENVOI_REQ 3

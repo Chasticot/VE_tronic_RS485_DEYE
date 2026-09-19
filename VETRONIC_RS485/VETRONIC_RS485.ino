@@ -69,6 +69,16 @@ const char *ntpServer = "fr.pool.ntp.org";
 struct tm timeinfo;
 int previous_hour = 0;
 
+const IPAddress directApIp(192, 168, 4, 1);
+const IPAddress directApNetmask(255, 255, 255, 0);
+
+bool startDirectAccessPoint()
+{
+  if (!WiFi.mode(WIFI_AP_STA)) return false;
+  if (!WiFi.softAPConfig(directApIp, directApIp, directApNetmask)) return false;
+  return WiFi.softAP(DIRECT_AP_SSID, DIRECT_AP_PASSWORD);
+}
+
 // Fonctions nécessaires au fonctionnement du programme
 #include "fonctions.h"
 #include "pilotage.h"
@@ -97,14 +107,24 @@ void setup()
   // On configure le seveur NTP sur la timezone de Paris
   configTzTime("CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00", ntpServer);
 
+  // Point d'accès permanent : il reste disponible avec ou sans box Wi-Fi.
+  bool directApReady = startDirectAccessPoint();
+
   // Configuration du portail web AutoConnect
   config.boundaryOffset = CREDENTIAL_OFFSET; // Déplace la sauvergarde des SSID Wifi après les paramètres de EEPROM
   // L'OTA est servie par /wifi afin de rester dans l'interface VE-Tronic.
   config.ota = AC_OTA_EXTRA;
   config.auth = AC_AUTH_NONE; // Authentification uniquement sur les paramètres.
   config.otaExtraCaption = fw_ver;
-  config.apid = "VETRONIC_ESP32_OTA";    // SSID en mode AP
-  config.apip = IPAddress(172, 0, 0, 1); // Adresse IP en mode AP
+  config.apid = DIRECT_AP_SSID;
+  config.psk = DIRECT_AP_PASSWORD;
+  config.apip = directApIp;
+  config.gateway = directApIp;
+  config.netmask = directApNetmask;
+  // Le point d'accès est démarré avant AutoConnect et reste actif en même
+  // temps que la connexion à la box. /wifi remplace le portail captif.
+  config.autoRise = false;
+  config.preserveAPMode = true;
   config.autoReconnect = true;           // Reconnection automatique
   // Laisser tourner le régulateur RS485 même sans réseau Wi-Fi au démarrage.
   config.portalTimeout = 15000;
@@ -117,14 +137,19 @@ void setup()
   beginControl();
 
   // Démmarage du portail AutoConnect
-  if (portal.begin(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD, 15000))
+  bool stationConnected = portal.begin(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD, 15000);
+  // AutoConnect peut forcer WIFI_STA pendant sa connexion et couper le SoftAP.
+  directApReady = startDirectAccessPoint();
+  if (stationConnected)
   {
     Serial.println("Web server started, IP:" + WiFi.localIP().toString());
   }
   else
   {
-    Serial.println("Wi-Fi indisponible : fonctionnement local et portail de secours actifs.");
+    Serial.println("Connexion à la box indisponible, fonctionnement par point d'accès direct.");
   }
+  Serial.println(directApReady ? "Point d'accès direct: http://192.168.4.1/"
+                               : "Erreur de démarrage du point d'accès direct.");
 
   // Récupération des valeurs en mémoire
   getParams(params);

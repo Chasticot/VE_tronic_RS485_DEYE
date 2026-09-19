@@ -2,7 +2,7 @@
 
 Cette version `v3.3-rs485-merged` ajoute dans **Paramètres → Onduleur Deye → Liaison avec le Deye** le choix entre **Wi-Fi / logger Solarman LSW** et **RS485 / câble direct**. La sélection s'applique dès l'enregistrement et reste mémorisée après redémarrage. Les anciennes configurations restent en Wi-Fi. Les coordonnées LSW sont conservées lors d'un passage en RS485.
 
-Le Wi-Fi de l'ESP32 sert toujours à la page web, à Jeedom et aux mises à jour. La lecture Deye par RS485 ne dépend ni du réseau ni du logger. Sans Wi-Fi au démarrage, après les délais de connexion et de portail, le programme poursuit son fonctionnement avec le point d'accès AutoConnect `VETRONIC_ESP32_OTA`, adresse `172.0.0.1`. Après un redémarrage ou le retour de la WB-01, le firmware sélectionne le solaire dynamique, maintient d'abord 0 A, puis prépare la borne et attend des mesures Deye fraîches avant toute charge.
+Le Wi-Fi de l'ESP32 sert toujours à la page web, à Jeedom et aux mises à jour. La lecture Deye par RS485 ne dépend ni du réseau ni du logger. Le point d'accès direct permanent **VE-Tronic-Direct** est disponible à `http://192.168.4.1`, y compris quand la carte est connectée à la box. Son mot de passe est défini par `DIRECT_AP_PASSWORD` dans `config.h` ou `secrets.h`. Après un redémarrage ou le retour de la WB-01, le firmware sélectionne le solaire dynamique, maintient d'abord 0 A, puis prépare la borne et attend des mesures Deye fraîches avant toute charge.
 
 ## Carte et liaison WB-01
 

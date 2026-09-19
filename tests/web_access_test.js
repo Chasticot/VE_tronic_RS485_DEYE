@@ -3,6 +3,7 @@ const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert/strict');
 const source = fs.readFileSync(require('path').join(__dirname, '../VETRONIC_RS485/pilotage_page.h'), 'utf8');
+const sketch = fs.readFileSync(require('path').join(__dirname, '../VETRONIC_RS485/VETRONIC_RS485.ino'), 'utf8');
 const script = source.match(/<script>([\s\S]*?)<\/script>/)[1];
 assert(source.includes('name="socGuard"'));
 assert(source.includes('name="socStop"'));
@@ -15,6 +16,10 @@ assert(script.includes("action:'scan'"));
 assert(script.includes("wifiInit(true)"));
 assert(script.includes("Array.isArray(d.saved)"));
 assert(script.includes("Array.isArray(d.networks)"));
+assert(script.includes("const ap='Accès direct : '+d.apSsid"));
+assert(sketch.includes('bool startDirectAccessPoint()'));
+assert(sketch.includes('config.preserveAPMode = true;'));
+assert(sketch.indexOf('directApReady = startDirectAccessPoint();', sketch.indexOf('portal.begin')) > sketch.indexOf('portal.begin'));
 assert(script.includes("api('/api/led',data)"));
 assert(script.includes("['settings','ledSettings']"));
 async function exercise(editing,transport='wifi') {
@@ -35,7 +40,7 @@ async function exercise(editing,transport='wifi') {
       querySelectorAll:selector=>selector==='[data-settings]'?settings:selector==='[data-mode]'?[mode]:[]},
     fetch:async(path,options)=>{
       calls.push({path,options});
-      const data=path==='/api/status'?{token:'test-token',message:'OK',wbValid:true,state:1,amps:0,targetA:0,deyeValid:true,deyeUsingLastGood:true,deyeAgeSeconds:6,deyeError:'Connexion Deye impossible',transport}: {parameters:[],date:'2026'};
+      const data=path==='/api/status'?{token:'test-token',message:'OK',wbValid:true,state:1,amps:0,targetA:0,deyeValid:true,deyeUsingLastGood:true,deyeAgeSeconds:6,deyeError:'Connexion Deye impossible',transport,apSsid:'VE-Tronic-Direct',apIp:'192.168.4.1'}: {parameters:[],date:'2026'};
       return {ok:true,headers:{get:()=>options.method==='GET'?'application/json':'text/plain'},json:async()=>data,text:async()=>'OK'};
     }
   };

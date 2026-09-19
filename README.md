@@ -2,14 +2,14 @@
 
 Pilotage solaire d'une borne **VE-Tronic WB-01** avec un onduleur **Deye SUN-12K-SG02LP1-EU**, sur une **LILYGO T-CAN485 / ESP32**.
 
-La page web permet de choisir la connexion au Deye : **Wi-Fi via un logger Solarman LSW** ou **RS485 direct**. Le choix et les paramètres sont mémorisés. Le Wi-Fi reste disponible pour la configuration web et Jeedom.
+La page web permet de choisir la connexion au Deye : **Wi-Fi via un logger Solarman LSW** ou **RS485 direct**. Le choix et les paramètres sont mémorisés. Le Wi-Fi reste disponible pour la configuration web et Jeedom. Un point d'accès direct permanent permet aussi de joindre la carte à `http://192.168.4.1`.
 
 ## Démarrage
 
 1. Lire la [notice RS485 et câblage LILYGO](README_RS485.md).
 2. Ouvrir `VETRONIC_RS485/VETRONIC_RS485.ino` dans Arduino IDE.
 3. Choisir **ESP32 Dev Module**, cœur Espressif **2.0.17**, flash 4 Mo, partitions par défaut, PSRAM désactivée. Installer AutoConnect, PageBuilder, ArduinoJson 6 et ESP32Time.
-4. Facultatif : copier `secrets.example.h` vers `secrets.h` dans le dossier du sketch et renseigner le Wi-Fi. Ce fichier reste local. Sinon utiliser le portail de configuration Wi-Fi de secours.
+4. Facultatif : copier `secrets.example.h` vers `secrets.h` dans le dossier du sketch et renseigner le Wi-Fi et, si souhaité, le mot de passe du point d'accès direct. Ce fichier reste local. Le point d'accès `VE-Tronic-Direct` reste disponible à `192.168.4.1`, même avec une connexion à la box.
 5. Personnaliser les identifiants web `WEB_USER` / `WEB_PASSWORD` dans `config.h`, compiler et téléverser par USB sur la carte neuve.
 6. Ouvrir `/parametres`, configurer la liaison Deye et comparer les mesures à l'onduleur avant d'activer le pilotage solaire.
 

@@ -540,6 +540,8 @@ void beginControl() {
     d["connected"]=connected; d["ssid"]=connected?WiFi.SSID():"";
     d["rssi"]=rssi; d["percent"]=connected?wifiSignalPercent(rssi):0;
     d["ip"]=connected?WiFi.localIP().toString():"";
+    d["apSsid"]=DIRECT_AP_SSID; d["apIp"]=WiFi.softAPIP().toString();
+    d["apStations"]=WiFi.softAPgetStationNum();
     JsonArray saved=d.createNestedArray("saved");
     AutoConnectCredential credentials;
     station_config_t credential;
@@ -615,6 +617,8 @@ void beginControl() {
     int wifiRssi=wifiConnected?WiFi.RSSI():0;
     d["wifiConnected"]=wifiConnected; d["wifiSsid"]=wifiConnected?WiFi.SSID():"";
     d["wifiRssi"]=wifiRssi; d["wifiPercent"]=wifiConnected?wifiSignalPercent(wifiRssi):0;
+    d["apSsid"]=DIRECT_AP_SSID; d["apIp"]=WiFi.softAPIP().toString();
+    d["apStations"]=WiFi.softAPgetStationNum();
     d["targetA"]=targetA; d["wbValid"]=wbSampleValid && millis()-wbSampleAt<10000;
     d["requestedA"]=lastRequestedA; d["currentConfirmed"]=currentConfirmed;
     d["currentDelivered"]=currentDelivered; d["currentReadback"]=currentReadback.substring(0,512);
