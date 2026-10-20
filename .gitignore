@@ -18,3 +18,7 @@ Thumbs.db
 # Outils locaux
 .codex/
 .agents/
+
+# Projet PlatformIO
+**/.pio/
+**/.vscode/

@@ -4,7 +4,28 @@ Pilotage solaire d'une borne **VE-Tronic WB-01** avec un onduleur **Deye SUN-12K
 
 La page web permet de choisir la connexion au Deye : **Wi-Fi via un logger Solarman LSW** ou **RS485 direct**. Le choix et les paramètres sont mémorisés. Le Wi-Fi reste disponible pour la configuration web et Jeedom. Un point d'accès direct permanent permet aussi de joindre la carte à `http://192.168.4.1`.
 
-## Démarrage
+## Version actuelle — 20 octobre 2026
+
+Le projet [PlatformIO](platformio/README.md) contient la version actuelle, avec
+les variantes **sans SD** et **avec historique micro-SD**. La variante SD est
+sélectionnée par défaut. Ouvrir le dossier `platformio/` dans VS Code avec
+PlatformIO, puis lancer **Build** et **Upload** pour l'environnement souhaité.
+Les bibliothèques utilisées pour les compilations sont incluses dans `platformio/lib/`.
+
+Cette version ajoute une reconnexion Wi-Fi toutes les **30 secondes**, sans
+limite de durée après une coupure du routeur. Les tentatives ne bloquent pas
+le pilotage RS485 et le point d'accès direct reste actif. Le choix d'un autre
+réseau depuis la page Wi-Fi devient la nouvelle cible de reconnexion.
+
+Les deux variantes ont été compilées et les tests simulant notamment une
+coupure de dix minutes passent. Les détails et limites des vérifications
+figurent dans [les résultats de compilation](platformio/BUILD_RESULTS.md).
+Les essais sur la carte après une coupure réelle du routeur restent à faire.
+
+Les dossiers Arduino décrits ci-dessous correspondent à la version antérieure.
+Pour la correction de reconnexion et la variante SD, utiliser `platformio/`.
+
+## Démarrage Arduino (version antérieure)
 
 1. Lire la [notice RS485 et câblage LILYGO](README_RS485.md).
 2. Ouvrir `VETRONIC_RS485/VETRONIC_RS485.ino` dans Arduino IDE.
